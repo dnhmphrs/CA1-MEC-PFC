@@ -1,84 +1,124 @@
 <script>
   import { onMount } from 'svelte';
 
-  // import { hexToWebGLColor } from './webgl/UtilFunctions.js';
-  import { setupBackground, drawBackground,  cleanupBackground } from './webgl/Background.js';
-  // import { setupBox, drawBox, cleanupBox } from "./webgl/Aura";
+  import { setupBackground, drawBackground, cleanupBackground } from './webgl/Background.js';
 
   let canvas;
   let aspectRatio;
+  let mouseX = 0;
+  let mouseY = 0;
+  let globalConfig = { /* your global config */ };
+
+  const borderSize = 2;
+
+  const layoutConfig = [
+    { width: 0.33, grid: [5, 5] },
+    { width: 0.33, grid: [5, 5] },
+    { width: 0.34, grid: [1, 15] }
+  ];
+
+  function calculatePerfectHeight(canvasHeight, gridRows, borderSize, initialHeightPercentage) {
+  const totalBorders = (gridRows - 1) * borderSize;
+  const availableHeight = Math.floor((canvasHeight * initialHeightPercentage) - totalBorders);
+  const totalHeightPerCell = Math.floor(availableHeight / gridRows);
+  const totalHeight = (totalHeightPerCell * gridRows) + totalBorders;
+
+  return totalHeight / canvasHeight;
+}
+
+
+  layoutConfig.forEach((config) => {
+    config.height = calculatePerfectHeight(window.innerHeight, config.grid[0], borderSize, 0.95);
+  });
+
+  function updateMousePosition(event) {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseY = ((event.clientY - rect.top) / rect.height) * -2 + 1;
+  }
 
   onMount(() => {
-    // -------------------------------------------------------------------------
-    // SETUP CONTEXT
-    // -------------------------------------------------------------------------
-
     const gl = canvas.getContext('webgl');
     if (!gl) {
       console.error('Unable to initialize WebGL.');
       return;
     }
 
-    // -------------------------------------------------------------------------
-    // INITIALIZATION
-    // -------------------------------------------------------------------------
-
     function resizeCanvasToDisplaySize(canvas, multiplier = 1) {
-        const width  = canvas.clientWidth * multiplier | 0;
-        const height = canvas.clientHeight * multiplier | 0;
+      const width = canvas.clientWidth * multiplier | 0;
+      const height = canvas.clientHeight * multiplier | 0;
 
-        if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
-            return true; // Indicates the canvas was resized
-        }
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        return true;
+      }
 
-        return false; // Indicates the canvas size was not changed
+      return false;
     }
 
     function resizeCanvas() {
-        if (resizeCanvasToDisplaySize(canvas, window.devicePixelRatio)) {
-            aspectRatio = canvas.width / canvas.height;
-            gl.viewport(0, 0, canvas.width, canvas.height);
-        }
+      if (resizeCanvasToDisplaySize(canvas, window.devicePixelRatio)) {
+        aspectRatio = canvas.width / canvas.height;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+      }
     }
 
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas(); // Initial resize
 
-		const bg = setupBackground(gl);
-    // const box = setupBox(gl);
+    const shader1 = setupBackground(gl);
+    const shader2 = setupBackground(gl);
+    const shader3 = setupBackground(gl);
 
-		// const white = hexToWebGLColor(0xf0f0f0);
-		// const black = hexToWebGLColor(0x232323);
-
-    // -------------------------------------------------------------------------
-    // RENDER LOOP
-    // -------------------------------------------------------------------------
+    canvas.addEventListener('mousemove', updateMousePosition);
 
     function render() {
-			// gl.clearColor(0, 0, 0, 0);
-			gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      const now = performance.now();
 
-			drawBackground(gl, bg, performance.now(), aspectRatio);
-      // drawBox(gl, box, black, performance.now(), aspectRatio);
+      let offsetX = 0;
 
-			requestAnimationFrame(render);
+      layoutConfig.forEach((config, index) => {
+        const classWidth = Math.floor(canvas.width * config.width);
+        const classHeight = Math.floor(canvas.height * config.height);
+        const [gridCols, gridRows] = config.grid;
+        const totalBorderWidth = (gridCols - 1) * borderSize;
+        const totalBorderHeight = (gridRows - 1) * borderSize;
+        const cellWidth = Math.floor((classWidth - totalBorderWidth) / gridCols);
+        const cellHeight = Math.floor((classHeight - totalBorderHeight) / gridRows);
+
+        for (let row = 0; row < gridRows; row++) {
+          for (let col = 0; col < gridCols; col++) {
+            const x = offsetX + col * (cellWidth + borderSize);
+            const y = row * (cellHeight + borderSize);
+            gl.viewport(x, y, cellWidth, cellHeight);
+
+            if (index === 0) {
+              drawBackground(gl, shader1, now, aspectRatio);
+            } else if (index === 1) {
+              drawBackground(gl, shader2, now, aspectRatio);
+            } else if (index === 2) {
+              drawBackground(gl, shader3, now, aspectRatio);
+            }
+          }
+        }
+
+        offsetX += classWidth + borderSize;
+      });
+
+      requestAnimationFrame(render);
     }
 
     requestAnimationFrame(render);
-
-    // if (gl) {
-    //     canvas.style.opacity = 1;
-    // }
-
     canvas.style.opacity = 1;
 
-    // Cleanup
     return () => {
       window.removeEventListener('resize', resizeCanvas);
-      cleanupBackground(gl, bg);
-      // cleanupBox(gl, box);
+      canvas.removeEventListener('mousemove', updateMousePosition);
+      cleanupBackground(gl, shader1);
+      cleanupBackground(gl, shader2);
+      cleanupBackground(gl, shader3);
     };
   });
 </script>
@@ -92,7 +132,7 @@
   left:0;
   width: 100%;
   height: 100%;
-  display: block; /* Removes potential extra space below the canvas */
+  display: block;
   padding: 0;
   margin: 0;
   border: none;
